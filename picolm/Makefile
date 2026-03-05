@@ -45,6 +45,16 @@ cross-riscv: CFLAGS += -march=rv64gc -mabi=lp64d
 cross-riscv: LDFLAGS += -static
 cross-riscv: $(TARGET)
 
+# --- WebAssembly (WASI) build for WAMR/iwasm ---
+WASI_SDK ?= /opt/wasi-sdk
+wasm: CC = $(WASI_SDK)/bin/clang
+wasm: CFLAGS = -O2 -std=c11 -Wall -Wextra -Wpedantic --target=wasm32-wasi --sysroot=$(WASI_SDK)/share/wasi-sysroot
+wasm: LDFLAGS = -lm
+wasm: $(TARGET).wasm
+
+$(TARGET).wasm: $(SRCS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 # --- Debug build ---
 debug: CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -g -O0
 debug: $(TARGET)
@@ -68,6 +78,6 @@ model:
 	fi
 
 clean:
-	rm -f $(TARGET) $(TARGET).exe *.obj *.o
+	rm -f $(TARGET) $(TARGET).exe $(TARGET).wasm *.obj *.o
 
-.PHONY: native static pi pi-arm32 cross-pi riscv cross-riscv debug install model clean
+.PHONY: native static pi pi-arm32 cross-pi riscv cross-riscv wasm debug install model clean
