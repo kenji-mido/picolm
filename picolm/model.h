@@ -105,10 +105,12 @@ typedef struct {
     model_weights_t weights;
     run_state_t     state;
 
-    /* mmap bookkeeping */
+    /* File data bookkeeping */
     void  *mmap_addr;
     size_t mmap_size;
-#ifdef _WIN32
+#if defined(__wasi__) || defined(PICOLM_NO_MMAP)
+    /* fread-based: mmap_addr is a malloc'd buffer */
+#elif defined(_WIN32)
     void  *file_handle;
     void  *map_handle;
 #else

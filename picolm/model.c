@@ -7,7 +7,9 @@
 #include <string.h>
 #include <math.h>
 
-#ifdef _WIN32
+#if defined(__wasi__) || defined(PICOLM_NO_MMAP)
+/* WASI: no mmap, use fread into malloc buffer */
+#elif defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
@@ -132,7 +134,36 @@ static uint64_t skip_meta_value(reader_t *r, uint32_t vtype, int *is_numeric) {
 /* ---- mmap abstraction ---- */
 
 static int mmap_file(model_t *m, const char *path) {
-#ifdef _WIN32
+#if defined(__wasi__) || defined(PICOLM_NO_MMAP)
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        fprintf(stderr, "Cannot open file: %s\n", path);
+        return -1;
+    }
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (fsize <= 0) {
+        fprintf(stderr, "Cannot determine file size: %s\n", path);
+        fclose(fp);
+        return -1;
+    }
+    m->mmap_size = (size_t)fsize;
+    void *buf = malloc(m->mmap_size);
+    if (!buf) {
+        fprintf(stderr, "malloc failed for %zu bytes\n", m->mmap_size);
+        fclose(fp);
+        return -1;
+    }
+    size_t nread = fread(buf, 1, m->mmap_size, fp);
+    fclose(fp);
+    if (nread != m->mmap_size) {
+        fprintf(stderr, "Short read: got %zu of %zu bytes\n", nread, m->mmap_size);
+        free(buf);
+        return -1;
+    }
+    m->mmap_addr = buf;
+#elif defined(_WIN32)
     HANDLE fh = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (fh == INVALID_HANDLE_VALUE) {
@@ -189,7 +220,9 @@ static int mmap_file(model_t *m, const char *path) {
 
 static void munmap_file(model_t *m) {
     if (!m->mmap_addr) return;
-#ifdef _WIN32
+#if defined(__wasi__) || defined(PICOLM_NO_MMAP)
+    free(m->mmap_addr);
+#elif defined(_WIN32)
     UnmapViewOfFile(m->mmap_addr);
     CloseHandle(m->map_handle);
     CloseHandle(m->file_handle);

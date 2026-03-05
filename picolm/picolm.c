@@ -8,7 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
+#if defined(__wasi__)
+#include <wasi/api.h>
+static double get_time_ms(void) {
+    __wasi_timestamp_t ts;
+    (void)__wasi_clock_time_get(__WASI_CLOCKID_MONOTONIC, 1000000, &ts);
+    return (double)ts / 1000000.0;
+}
+#elif defined(_WIN32)
 #include <windows.h>
 static double get_time_ms(void) {
     LARGE_INTEGER freq, count;
@@ -108,7 +115,11 @@ int main(int argc, char **argv) {
     /* Read prompt from stdin if not provided via -p */
     char *stdin_prompt = NULL;
     if (!prompt) {
-#ifdef _WIN32
+#if defined(__wasi__)
+        /* WASI: always try to read stdin when no -p given */
+        stdin_prompt = read_stdin();
+        prompt = stdin_prompt;
+#elif defined(_WIN32)
         HANDLE h = GetStdHandle(STD_INPUT_HANDLE);
         DWORD mode;
         if (!GetConsoleMode(h, &mode)) {

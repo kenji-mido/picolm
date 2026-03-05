@@ -3,7 +3,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef _WIN32
+#if defined(__wasi__) || defined(PICOLM_NO_THREADS)
+/* No threading support */
+#elif defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #else
@@ -45,6 +47,7 @@ typedef struct {
     gguf_type_t  qtype;
 } matmul_task_t;
 
+#if !defined(__wasi__) && !defined(PICOLM_NO_THREADS)
 static
 #ifdef _WIN32
 DWORD WINAPI
@@ -63,11 +66,19 @@ matmul_worker(void *arg) {
     return NULL;
 #endif
 }
+#endif /* !__wasi__ && !PICOLM_NO_THREADS */
 
 void matmul(float *out, const float *x, const void *W, int n, int d, gguf_type_t qtype) {
     size_t row_bytes = gguf_type_row_size(qtype, n);
     const char *wptr = (const char *)W;
 
+#if defined(__wasi__) || defined(PICOLM_NO_THREADS)
+    /* Single-threaded only */
+    (void)n_threads;
+    for (int i = 0; i < d; i++) {
+        out[i] = vec_dot(wptr + (size_t)i * row_bytes, x, n, qtype);
+    }
+#else
     if (n_threads <= 1 || d < 4) {
         for (int i = 0; i < d; i++) {
             out[i] = vec_dot(wptr + (size_t)i * row_bytes, x, n, qtype);
@@ -119,6 +130,7 @@ void matmul(float *out, const float *x, const void *W, int n, int d, gguf_type_t
         pthread_join(threads[t], NULL);
 #endif
     }
+#endif /* __wasi__ || PICOLM_NO_THREADS */
 }
 
 /* ================================================================
